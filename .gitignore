@@ -1,0 +1,27 @@
+# 敏感配置 / 凭据
+config.json
+credentials.json
+credentials.*.json
+!credentials.example.*.json
+kiro-auth-token.json
+
+# 运行时缓存
+kiro_balance_cache.json
+kiro_stats.json
+
+# 抓包 / 调试日志
+tools/capture-proxy/captures/
+*.log
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# 临时
+*.tmp
+*.bak

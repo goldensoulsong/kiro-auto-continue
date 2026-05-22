@@ -1,0 +1,10 @@
+{
+  "host": "127.0.0.1",
+  "port": 8991,
+  "apiKey": "sk-kiro-rs-CHANGE-ME-RANDOM-STRING",
+  "adminApiKey": "sk-admin-CHANGE-ME-RANDOM-STRING",
+  "region": "us-east-1",
+  "tlsBackend": "rustls",
+  "defaultEndpoint": "ide",
+  "kiroVersion": "0.12.200"
+}
