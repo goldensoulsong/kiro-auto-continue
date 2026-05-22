@@ -1,9 +1,10 @@
-# 敏感配置 / 凭据
-config.json
-credentials.json
-credentials.*.json
-!credentials.example.*.json
+# 敏感配置 / 凭据（仅根目录用户真实配置）
+/config.json
+/credentials.json
+/credentials.*.json
+!/credentials.example.*.json
 kiro-auth-token.json
+# 注意：不要 ignore tools/auto-continue/config.json，那是默认配置必须随仓库分发
 
 # 运行时缓存
 kiro_balance_cache.json

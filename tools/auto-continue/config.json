@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "listenPort": 8992,
+  "adminPort": 8993,
+  "targetHost": "127.0.0.1",
+  "targetPort": 8991,
+  "maxContinuations": 5,
+  "truncateThreshold": 7600,
+  "continuePrompt": "继续",
+  "debug": false,
+  "rateLimitEnabled": true,
+  "rateLimitWindowMs": 60000,
+  "rateLimitMaxRequests": 3,
+  "rateLimitOnExceed": "queue",
+  "rateLimitMaxQueue": 20,
+  "ideExclusiveEnabled": true,
+  "ideExclusiveCheckIntervalMs": 10000,
+  "kiroExe": "../../kiro-rs.exe",
+  "kiroConfig": "../../config.json",
+  "kiroCredentials": "../../credentials.json"
+}
