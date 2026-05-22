@@ -1,5 +1,6 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
+setlocal EnableExtensions
 title kiro-rs Auto-Continue
 cd /d "%~dp0"
 

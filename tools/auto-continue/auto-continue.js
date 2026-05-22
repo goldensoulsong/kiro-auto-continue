@@ -19,6 +19,12 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
+// 强制 stdout/stderr 使用 UTF-8，避免英文/日文等非 GBK 系统的 Windows 终端中文乱码
+if (process.platform === 'win32') {
+  try { process.stdout.setDefaultEncoding('utf8'); } catch (_) {}
+  try { process.stderr.setDefaultEncoding('utf8'); } catch (_) {}
+}
+
 // ============================================================================
 // 配置加载
 // ============================================================================
