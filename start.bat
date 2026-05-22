@@ -29,18 +29,23 @@ if not exist "kiro-rs.exe" (
 
 rem 3. 检查 config.json
 if not exist "config.json" (
-  echo [提示] config.json 不存在，正在从 config.example.json 复制
-  if exist "config.example.json" (
-    copy /Y "config.example.json" "config.json" >nul
-    echo        已生成 config.json，请打开它修改 apiKey 和 adminApiKey 后重新运行
-    notepad config.json
-    pause
-    exit /b 0
-  ) else (
+  echo [提示] config.json 不存在，正在自动生成...
+  if not exist "config.example.json" (
     echo [错误] 找不到 config.example.json
     pause
     exit /b 1
   )
+  copy /Y "config.example.json" "config.json" >nul
+  rem 用 Node 生成两个随机 key 替换占位符（一行 inline，避免 cmd 转义噩梦）
+  node -e "var fs=require('fs'),c=require('crypto'),p='config.json';var t=fs.readFileSync(p,'utf-8');t=t.replace(/sk-kiro-rs-CHANGE-ME-RANDOM-STRING/,'sk-kiro-rs-'+c.randomBytes(24).toString('hex')).replace(/sk-admin-CHANGE-ME-RANDOM-STRING/,'sk-admin-'+c.randomBytes(24).toString('hex'));fs.writeFileSync(p,t);"
+  if errorlevel 1 (
+    echo [错误] 自动生成 key 失败，请手动编辑 config.json
+    notepad config.json
+    pause
+    exit /b 1
+  )
+  echo        已生成 config.json 并自动填入随机 apiKey / adminApiKey
+  echo.
 )
 
 rem 4. 检查 credentials.json，没有就生成空数组让 kiro-rs 能起来
@@ -67,6 +72,12 @@ start /min cmd /c "timeout /t 5 /nobreak >nul && start http://127.0.0.1:8993"
 
 echo 启动中... 5 秒后将自动打开管理面板
 echo 关闭本窗口可同时停止所有服务
+echo.
+echo ------------------------------------------------------------
+echo 客户端（酒馆/Cline等）接入信息：
+echo   API URL: http://127.0.0.1:8992
+for /f "delims=" %%K in ('node -e "console.log(JSON.parse(require('fs').readFileSync('config.json','utf-8')).apiKey)"') do echo   API Key: %%K
+echo ------------------------------------------------------------
 echo.
 
 node tools\auto-continue\auto-continue.js
