@@ -472,6 +472,97 @@ function proxyToKiro(req, res) {
 
 
 // ============================================================================
+// 快捷导入凭据
+// ============================================================================
+
+/**
+ * 扫描本机 Kiro IDE 的 token 缓存目录，返回所有含 refreshToken 的候选凭据
+ */
+function scanLocalTokens() {
+  const home = process.env.USERPROFILE || process.env.HOME;
+  if (!home) return [];
+
+  // Windows 主路径 + 通用兜底
+  const candidates = [
+    path.join(home, '.aws', 'sso', 'cache'),
+    path.join(home, '.aws', 'amazonq', 'cache')
+  ];
+
+  const results = [];
+  for (const dir of candidates) {
+    if (!fs.existsSync(dir)) continue;
+    let files;
+    try { files = fs.readdirSync(dir); } catch { continue; }
+    for (const f of files) {
+      if (!f.endsWith('.json')) continue;
+      const fullPath = path.join(dir, f);
+      try {
+        const text = fs.readFileSync(fullPath, 'utf-8');
+        const data = JSON.parse(text);
+        if (data && typeof data.refreshToken === 'string' && data.refreshToken.length > 20) {
+          results.push({
+            file: fullPath,
+            refreshToken: data.refreshToken,
+            expiresAt: data.expiresAt || data.expires_at || null,
+            authMethod: (data.authMethod || data.auth_method || 'social').toLowerCase(),
+            clientId: data.clientId || null,
+            clientSecret: data.clientSecret || null
+          });
+        }
+      } catch {
+        // 非 JSON 或读取失败，跳过
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * 把单个凭据通过 kiro-rs 的 admin API 导入。
+ * 直接复用已有的 proxyToKiro 同源反代 → /kiro-admin/api/credentials
+ */
+function importTokenToKiro(payload) {
+  return new Promise((resolve, reject) => {
+    const body = {
+      refreshToken: payload.refreshToken,
+      authMethod: payload.authMethod || 'social',
+    };
+    if (payload.clientId) body.clientId = payload.clientId;
+    if (payload.clientSecret) body.clientSecret = payload.clientSecret;
+    if (typeof payload.priority === 'number') body.priority = payload.priority;
+
+    const bodyStr = JSON.stringify(body);
+    const headers = {
+      'content-type': 'application/json',
+      'content-length': Buffer.byteLength(bodyStr),
+      host: `${TARGET_HOST}:${TARGET_PORT}`
+    };
+    if (kiroAdminApiKey) headers['x-api-key'] = kiroAdminApiKey;
+
+    const req = http.request({
+      hostname: TARGET_HOST,
+      port: TARGET_PORT,
+      path: '/api/admin/credentials',
+      method: 'POST',
+      headers
+    }, (resp) => {
+      const chunks = [];
+      resp.on('data', c => chunks.push(c));
+      resp.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf-8');
+        let parsed;
+        try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
+        resolve({ statusCode: resp.statusCode, body: parsed });
+      });
+    });
+    req.on('error', reject);
+    req.write(bodyStr);
+    req.end();
+  });
+}
+
+
+// ============================================================================
 // 核心：流式自动续写
 // ============================================================================
 
@@ -712,12 +803,72 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 </div>
 
 <div class="tabs">
-  <div class="tab active" data-tab="continue">自动续写 / 服务</div>
+  <div class="tab active" data-tab="import">快捷导入</div>
+  <div class="tab" data-tab="continue">自动续写 / 服务</div>
   <div class="tab" data-tab="kiro">凭据管理（kiro-rs）</div>
 </div>
 
 <div class="content">
-<div class="tab-pane active" id="pane-continue">
+<div class="tab-pane active" id="pane-import">
+<div class="panel">
+<p class="subtitle">无需手动改 credentials.json，三种方式快速导入凭据</p>
+
+<div class="card">
+  <div class="card-title">方式 1：扫描本机 Kiro 凭据 <span style="color:#888;font-weight:normal">（推荐）</span></div>
+  <div style="color:#888;font-size:0.85rem;line-height:1.6;margin-bottom:12px">
+    自动扫描 <code style="background:#0f1117;padding:2px 6px;border-radius:4px">%USERPROFILE%\\.aws\\sso\\cache\\</code> 下的所有 token 文件
+  </div>
+  <div class="actions" style="margin-top:0">
+    <button class="btn btn-primary" onclick="scanTokens()">扫描本机凭据</button>
+  </div>
+  <div id="scan-result" style="margin-top:16px"></div>
+</div>
+
+<div class="card">
+  <div class="card-title">方式 2：粘贴 token JSON 文件全文</div>
+  <div style="color:#888;font-size:0.85rem;line-height:1.6;margin-bottom:12px">
+    复制 <code style="background:#0f1117;padding:2px 6px;border-radius:4px">kiro-auth-token.json</code> 的全部内容粘贴到下面
+  </div>
+  <textarea id="paste-json" placeholder='{"refreshToken":"aor...","expiresAt":"2099-12-31T...","authMethod":"social"}' style="width:100%;min-height:120px;background:#0f1117;border:1px solid #333;color:#fff;padding:10px;border-radius:6px;font-family:monospace;font-size:0.85rem;resize:vertical"></textarea>
+  <div class="actions">
+    <button class="btn btn-primary" onclick="importFromJson()">解析并导入</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">方式 3：只粘贴 refreshToken</div>
+  <div style="color:#888;font-size:0.85rem;line-height:1.6;margin-bottom:12px">
+    适合朋友只发了 aor 开头的字符串给你的场景。其他字段会自动填默认值
+  </div>
+  <div class="input-row">
+    <label>refreshToken</label>
+    <input type="text" id="paste-token" placeholder="aor..." style="flex:1;width:auto">
+  </div>
+  <div class="input-row">
+    <label>认证方式</label>
+    <select id="paste-auth-method" style="background:#0f1117;border:1px solid #333;color:#fff;padding:6px 10px;border-radius:6px;width:200px">
+      <option value="social">social（Google / GitHub 登录）</option>
+      <option value="idc">idc（企业 IdC 登录）</option>
+    </select>
+  </div>
+  <div class="input-row idc-only" style="display:none">
+    <label>clientId</label>
+    <input type="text" id="paste-client-id" placeholder="IdC 的 OIDC clientId" style="flex:1;width:auto">
+  </div>
+  <div class="input-row idc-only" style="display:none">
+    <label>clientSecret</label>
+    <input type="text" id="paste-client-secret" placeholder="IdC 的 OIDC clientSecret" style="flex:1;width:auto">
+  </div>
+  <div class="actions">
+    <button class="btn btn-primary" onclick="importFromToken()">导入</button>
+  </div>
+</div>
+
+<div id="import-toast" style="position:fixed;bottom:24px;right:24px;background:#1a1d27;border:1px solid #2a2d37;border-radius:8px;padding:12px 16px;display:none;max-width:400px;font-size:0.9rem;z-index:1000"></div>
+</div>
+</div>
+
+<div class="tab-pane" id="pane-continue">
 <div class="panel">
 <p class="subtitle">本地服务状态、自动续写开关与统计</p>
 
@@ -875,6 +1026,127 @@ tabs.forEach(tab => tab.addEventListener('click', () => {
   }
 }));
 
+// ============= 快捷导入 =============
+function showToast(msg, ok) {
+  const el = document.getElementById('import-toast');
+  el.textContent = msg;
+  el.style.borderColor = ok ? '#16a34a' : '#dc2626';
+  el.style.display = 'block';
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+function scanTokens() {
+  const result = document.getElementById('scan-result');
+  result.innerHTML = '<div style="color:#888">扫描中...</div>';
+  fetch('/api/local/scan-tokens', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { result.innerHTML = '<div style="color:#f87171">扫描失败: ' + data.error + '</div>'; return; }
+      if (!data.tokens || !data.tokens.length) {
+        result.innerHTML = '<div style="color:#888">没在本机找到 Kiro 凭据。请确认已经登录过 Kiro IDE，或用方式 2 / 3 手动导入</div>';
+        return;
+      }
+      let html = '<div style="color:#aaa;font-size:0.85rem;margin-bottom:8px">找到 ' + data.tokens.length + ' 个候选凭据，勾选要导入的：</div>';
+      data.tokens.forEach((t, i) => {
+        const tokenPreview = (t.refreshToken || '').slice(0, 12) + '...';
+        html += '<div style="background:#0f1117;border:1px solid #333;border-radius:6px;padding:10px 12px;margin-bottom:8px">'
+          + '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">'
+          + '<input type="checkbox" data-idx="' + i + '" checked style="width:16px;height:16px">'
+          + '<div style="flex:1;font-size:0.85rem;line-height:1.5">'
+          + '<div><span style="color:#888">refreshToken:</span> <code style="color:#4ade80">' + tokenPreview + '</code></div>'
+          + '<div><span style="color:#888">authMethod:</span> ' + (t.authMethod || 'social') + '</div>'
+          + (t.expiresAt ? '<div><span style="color:#888">expiresAt:</span> ' + t.expiresAt + '</div>' : '')
+          + '<div style="color:#666;font-size:0.75rem;margin-top:4px">' + t.file + '</div>'
+          + '</div></label></div>';
+      });
+      html += '<button class="btn btn-primary" onclick="importSelected()" style="margin-top:8px">导入选中</button>';
+      result.innerHTML = html;
+      window.__scanTokens = data.tokens;
+    })
+    .catch(e => { result.innerHTML = '<div style="color:#f87171">请求失败: ' + e.message + '</div>'; });
+}
+
+function importSelected() {
+  const checks = document.querySelectorAll('#scan-result input[type=checkbox]:checked');
+  if (!checks.length) { showToast('请至少勾选一个凭据', false); return; }
+  const tokens = Array.from(checks).map(c => window.__scanTokens[+c.dataset.idx]);
+  importBatch(tokens);
+}
+
+function importFromJson() {
+  const text = document.getElementById('paste-json').value.trim();
+  if (!text) { showToast('请先粘贴 JSON', false); return; }
+  let data;
+  try { data = JSON.parse(text); } catch (e) { showToast('JSON 解析失败: ' + e.message, false); return; }
+  if (!data.refreshToken) { showToast('JSON 里没有 refreshToken 字段', false); return; }
+  importBatch([{
+    refreshToken: data.refreshToken,
+    expiresAt: data.expiresAt,
+    authMethod: data.authMethod || 'social',
+    clientId: data.clientId,
+    clientSecret: data.clientSecret
+  }]).then(ok => { if (ok) document.getElementById('paste-json').value = ''; });
+}
+
+function importFromToken() {
+  const token = document.getElementById('paste-token').value.trim();
+  if (!token) { showToast('请先填 refreshToken', false); return; }
+  const authMethod = document.getElementById('paste-auth-method').value;
+  const cred = { refreshToken: token, authMethod };
+  if (authMethod === 'idc') {
+    cred.clientId = document.getElementById('paste-client-id').value.trim() || undefined;
+    cred.clientSecret = document.getElementById('paste-client-secret').value.trim() || undefined;
+    if (!cred.clientId || !cred.clientSecret) { showToast('IdC 凭据需要 clientId 和 clientSecret', false); return; }
+  }
+  importBatch([cred]).then(ok => {
+    if (ok) {
+      document.getElementById('paste-token').value = '';
+      document.getElementById('paste-client-id').value = '';
+      document.getElementById('paste-client-secret').value = '';
+    }
+  });
+}
+
+async function importBatch(tokens) {
+  let okCount = 0, failed = [];
+  for (const t of tokens) {
+    try {
+      const r = await fetch('/api/local/import-token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(t)
+      });
+      const data = await r.json();
+      if (r.ok && data.success !== false && !data.error) {
+        okCount++;
+      } else {
+        failed.push((data.error && data.error.message) || data.message || ('HTTP ' + r.status));
+      }
+    } catch (e) {
+      failed.push(e.message);
+    }
+  }
+  if (failed.length === 0) {
+    showToast('成功导入 ' + okCount + ' 个凭据，去 "凭据管理" 页查看', true);
+    return true;
+  } else if (okCount > 0) {
+    showToast('导入完成: 成功 ' + okCount + ' / 失败 ' + failed.length + '（失败原因: ' + failed.slice(0,2).join('; ') + '）', false);
+    return true;
+  } else {
+    showToast('全部失败: ' + failed.slice(0,2).join('; '), false);
+    return false;
+  }
+}
+
+// 切换 IdC 字段显隐
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'paste-auth-method') {
+    const show = e.target.value === 'idc';
+    document.querySelectorAll('.idc-only').forEach(el => { el.style.display = show ? 'flex' : 'none'; });
+  }
+});
+
 refresh();
 setInterval(refresh, 5000);
 </script>
@@ -936,6 +1208,42 @@ const adminServer = http.createServer((req, res) => {
       stopKiro();
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    // ====== 快捷导入：扫描本机 Kiro token 缓存 ======
+    if (req.method === 'POST' && req.url === '/api/local/scan-tokens') {
+      try {
+        const tokens = scanLocalTokens();
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ tokens }));
+      } catch (e) {
+        res.writeHead(500, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+      return;
+    }
+
+    // ====== 快捷导入：把一个凭据丢给 kiro-rs admin ======
+    if (req.method === 'POST' && req.url === '/api/local/import-token') {
+      try {
+        const payload = JSON.parse(body || '{}');
+        if (!payload.refreshToken) {
+          res.writeHead(400, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: { message: '缺少 refreshToken' } }));
+          return;
+        }
+        importTokenToKiro(payload).then(result => {
+          res.writeHead(result.statusCode, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(result.body));
+        }).catch(e => {
+          res.writeHead(502, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: { message: e.message } }));
+        });
+      } catch (e) {
+        res.writeHead(400, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: e.message } }));
+      }
       return;
     }
 
