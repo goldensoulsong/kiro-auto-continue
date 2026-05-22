@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 setlocal EnableExtensions
 title kiro-rs Auto-Continue
@@ -43,14 +43,13 @@ if not exist "config.json" (
   )
 )
 
-rem 4. 检查 credentials.json
+rem 4. 检查 credentials.json，没有就生成空数组让 kiro-rs 能起来
+rem    用户启动后通过管理面板的"快捷导入"添加凭据
 if not exist "credentials.json" (
-  echo [错误] 当前目录找不到 credentials.json
-  echo        请参考 credentials.example.social.json / credentials.example.idc.json
-  echo        填好你的 refreshToken 后保存为 credentials.json
+  echo [提示] credentials.json 不存在，正在生成空文件
+  echo        启动后请打开管理面板（http://127.0.0.1:8993）使用"快捷导入"添加凭据
+  echo [] > "credentials.json"
   echo.
-  pause
-  exit /b 1
 )
 
 rem 5. 检查端口冲突
