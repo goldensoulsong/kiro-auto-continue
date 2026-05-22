@@ -9,6 +9,7 @@
 - **底层 kiro-rs**：所有 Anthropic API 兼容、凭据管理、Token 刷新、负载均衡逻辑全部来自 [hank9999/kiro.rs](https://github.com/hank9999/kiro.rs)（MIT License），未做改动，本仓库仅引用其编译产物 `kiro-rs.exe`。
 - **本仓库新增**：
   - `tools/auto-continue/auto-continue.js` —— 流式自动续写 + 限流 + IDE 互斥保护 + 统一管理面板
+  - `tools/auto-continue/config.json` —— 自动续写默认配置
   - `start.bat` —— 一键启动脚本
   - 中文部署教程
 
@@ -43,8 +44,8 @@
 ### 第 2 步：拉取本仓库
 
 ```bat
-git clone https://github.com/goldensoulsong/GitResp2.git
-cd GitResp2
+git clone https://github.com/goldensoulsong/kiro-auto-continue.git
+cd kiro-auto-continue
 ```
 
 或在 GitHub 网页右上角 `Code → Download ZIP`，解压到任意目录。
@@ -155,7 +156,7 @@ cd GitResp2
 ## 目录结构
 
 ```
-GitResp2/
+kiro-auto-continue/
 ├── kiro-rs.exe                          ← 上游编译好的 Anthropic API 兼容代理
 ├── start.bat                            ← 一键启动脚本
 ├── config.example.json                  ← 主配置模板
@@ -164,7 +165,7 @@ GitResp2/
 ├── tools/
 │   └── auto-continue/
 │       ├── auto-continue.js             ← 自动续写代理 + 管理面板（核心新增）
-│       ├── config.json                  ← 自动续写配置
+│       ├── config.json                  ← 自动续写默认配置（随仓库分发）
 │       └── README.md
 ├── docs/
 │   └── 部署教程.md                       ← 详细图文教程
